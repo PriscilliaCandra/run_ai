@@ -80,8 +80,9 @@ Training paces are derived by inverting the quadratic curve at specific physiolo
 ## 4. Database Schema (SQLite)
 
 - **`runner_profiles`**: Anonymous runner profiles with fields `id` (UUID), `age`, `gender`, `experience_level`, `pb_5k`, `pb_10k`, `target_race_distance`, `target_race_time`, `current_weekly_mileage`, `training_days_per_week`, `preferred_training_days`, `plan_duration_weeks`, `injury_limitations`, `easy_run_pace`, `created_at`.
-- **`training_plans`**: Generated plans with fields `id`, `runner_profile_id` (FK), `calculated_vdot`, `target_pace`, `rule_based_plan_json` (Text), `ai_plan_json` (Text), `explainability_summary` (Text), `ai_model_used`, `created_at`.
-- **`plan_evaluations`**: Academic survey results with fields `id`, `training_plan_id` (FK), `personalization_score` (1-5), `usefulness_score` (1-5), `clarity_score` (1-5), `confidence_score` (1-5), `comments` (Text), `created_at`.
+- **`training_plans`**: Generated plans with fields `id`, `runner_profile_id` (FK), `user_id` (FK, **nullable** -- NULL for an anonymous research plan, set for a consumer's own plan; see Section 8), `calculated_vdot`, `target_pace`, `rule_based_plan_json` (Text), `ai_plan_json` (Text), `explainability_summary` (Text), `ai_model_used`, `created_at`.
+- **`plan_evaluations`**: Academic survey results with fields `id`, `training_plan_id` (FK), `personalization_score` (1-5), `usefulness_score` (1-5), `clarity_score` (1-5), `confidence_score` (1-5), `comments` (Text), `created_at`. Deliberately has no `user_id` -- research evaluations stay anonymous even for a logged-in consumer user.
+- **`users` / `user_profiles` / `sessions` / `password_reset_tokens`**: consumer account tables, added in Phase 1 and fully described in Section 8. Schema is managed by Alembic (`backend/alembic/`) going forward, not `Base.metadata.create_all()`.
 
 ---
 
@@ -106,12 +107,13 @@ Training paces are derived by inverting the quadratic curve at specific physiolo
    ```
    *Note: If you do not provide an API key, the prototype automatically uses its built-in Rule-Constrained AI Synthesis Fallback, meaning it runs 100% offline out-of-the-box!*
 
-3. Install dependencies and run the automated backend test suite (pytest):
+3. Install dependencies, apply database migrations, and run the automated backend test suite (pytest):
    ```powershell
    pip install -r requirements.txt
+   alembic upgrade head
    pytest
    ```
-   *The suite runs entirely against a private temporary SQLite database created per test run — it never reads or writes `running_research.db`.*
+   *`alembic upgrade head` is idempotent -- safe to run every time you pull new changes. It never drops or rewrites existing data (see Section 8.2). The pytest suite runs entirely against a private temporary SQLite database created per test run — it never reads or writes `running_research.db`.*
 
 4. Launch the FastAPI server:
    ```powershell
@@ -241,3 +243,58 @@ See [Section 5](#5-quick-start-instructions-local-execution) above: `uvicorn app
 ### 7.9 Exporting Evaluation Data
 
 On the **Survey Stats** page, click **"Export Research JSON"** to download the current `GET /api/evaluations/stats` payload (N/mean/median/SD per dimension for both plan types, plus recent qualitative comments) as a timestamped `.json` file for import into statistical software (e.g. R, SPSS, pandas) for Chapter 4 analysis.
+
+---
+
+## 8. Authentication Architecture & Security (Phase 1)
+
+Phase 1 adds a multi-user consumer foundation on top of the research prototype. The research flow above is completely unchanged and requires no account; this section documents the new, separate authentication system. Full rationale and audit trail: [`PRODUCT_READINESS_AUDIT.md`](PRODUCT_READINESS_AUDIT.md) and `PHASE_1_REPORT.md`.
+
+### 8.1 Identity Model
+
+`users` (auth identity: email, password hash, display name) is deliberately separate from `user_profiles` (running-specific data) and from the anonymous research `runner_profiles` table. A consumer account is never linked to anonymous research submissions; the two datasets cannot be joined.
+
+### 8.2 Database Migrations
+
+Schema is managed by **Alembic** (`backend/alembic/`), not `Base.metadata.create_all()` (which can create tables but can't safely alter existing ones). Two migrations exist:
+- `0001_baseline_research_schema` -- documents the schema that already existed (`runner_profiles`, `training_plans`, `plan_evaluations`); the live database was **stamped** to this revision (bookkeeping only, no DDL executed against existing data).
+- `0002_add_auth_and_ownership` -- purely additive: creates `users`, `user_profiles`, `sessions`, `password_reset_tokens`, and adds a **nullable** `user_id` column to `training_plans`. Every existing research row keeps `user_id = NULL` and was verified byte-for-byte unchanged (row counts and content) before and after migration.
+
+Run `alembic upgrade head` after pulling new migrations. Never run a destructive migration (`downgrade`) against a database with real data without a fresh backup.
+
+### 8.3 Authentication Flow
+
+- **Register** (`POST /api/auth/register`): email (normalized to lowercase, unique), password (Argon2-hashed via `argon2-cffi`; never plaintext or reversibly encrypted), display name (a pseudonym is fine -- no legal name required). Also logs the user in immediately.
+- **Login** (`POST /api/auth/login`): returns the exact same generic error ("Invalid email or password.") whether the email doesn't exist or the password is wrong, so the endpoint never reveals which one it was.
+- **Session**: an opaque, cryptographically random token (`secrets.token_urlsafe(32)`) is set in an **httpOnly, SameSite=Lax** cookie. Only a **SHA-256 hash** of the token is ever stored, in a `sessions` table with `expires_at`/`revoked_at`. The raw token exists only in the browser's cookie jar and is never recoverable from the database.
+- **Logout** (`POST /api/auth/logout`): revokes the session **server-side** (`revoked_at = now()`), not just clears the cookie -- a stolen cookie stops working immediately after logout.
+- **Password reset**: `POST /api/auth/forgot-password` always returns the same generic response regardless of whether the email exists. A random token is hashed and stored with a short expiry (default 30 min, `PASSWORD_RESET_TOKEN_TTL_MINUTES`); the raw token is **never** included in any API response. No real email provider is integrated yet -- `app/auth/email_service.py` logs the reset link server-side in a clearly-labeled dev-mode fallback rather than pretending to send an email. `POST /api/auth/reset-password` enforces single-use (`used_at`) and expiry, and revokes **every** existing session for that user on success.
+
+### 8.4 Authorization / Ownership
+
+- `training_plans.user_id` is **nullable**: `NULL` = an anonymous research plan (unchanged behavior, reachable without login); set = a consumer's own plan.
+- `GET /api/plans/{id}`: an anonymous plan stays open to anyone (preserving the research flow exactly). A user-owned plan is only returned to that same authenticated user -- anyone else, including another logged-in user, gets the same generic `404 Training plan not found` a nonexistent ID would return, so the endpoint never confirms an ID belongs to someone else.
+- `GET /api/plans` (recent list) now **excludes** user-owned plans entirely, so it can never be used to enumerate other users' plans.
+- `POST /api/plans/generate` derives `user_id` **only** from the authenticated session (`get_optional_current_user`) -- a client-supplied `user_id` in a request body is never honored anywhere in the API.
+- `GET/PATCH /api/users/me/profile` always operates on the session's own user; there is no way to address another user's profile by ID.
+- Verified by a mandatory two-user test (`tests/test_authorization.py`) and a manual run against the live application with two real accounts (see `PHASE_1_REPORT.md`).
+
+### 8.5 CSRF Strategy (documented, not claimed "fully secure" in isolation)
+
+Because authentication uses cookies, CSRF is addressed with two layers of defense-in-depth:
+1. The session cookie is `SameSite=Lax`, which already blocks the cookie from being attached to most cross-site state-changing requests.
+2. `app/core/csrf.py` additionally requires that any `POST/PUT/PATCH/DELETE` request **carrying the session cookie** present an `Origin` (or `Referer`) header matching a configured allowed origin (`ALLOWED_ORIGINS`); otherwise it's rejected with `403`. A cross-site page cannot forge this header to our origin.
+
+This is an appropriate strategy for this same-site SPA + API architecture, not a claim that the system is immune to every CSRF variant under every possible configuration.
+
+### 8.6 Rate Limiting
+
+Applied to login, registration, password-reset requests, and plan generation (which can invoke a paid LLM). Backed by `slowapi` (in-memory, single-process -- appropriate for MVP scale; move to a shared backend like Redis only when running multiple API instances). All limits are read from `app/config.py` / environment variables (`RATE_LIMIT_LOGIN`, `RATE_LIMIT_REGISTER`, `RATE_LIMIT_PASSWORD_RESET`, `RATE_LIMIT_PLAN_GENERATION` -- see `.env.example`), never hardcoded; changing them takes effect on the next process start. Plan generation is keyed by authenticated user when logged in, falling back to IP for anonymous/research requests, so one account can't exhaust a shared IP's quota and vice versa.
+
+### 8.7 Error Handling
+
+A global exception handler (`app/core/errors.py`) converts FastAPI/Pydantic validation errors into a friendly, field-labeled message instead of exposing the raw validation payload, and converts any unhandled exception into a generic `"An unexpected error occurred."` response. Full details (including the original validation errors and full tracebacks) are always logged server-side, never sent to the client -- API keys, stack traces, SQL errors, and internal file paths are never part of an API response.
+
+### 8.8 Secrets
+
+`GEMINI_API_KEY`/`OPENAI_API_KEY` remain server-side only (read via `app/config.py`, never sent to the frontend). `.env` is git-ignored (see the root `.gitignore`); `.env.example` documents every variable name with no real values. `SESSION_COOKIE_SECURE` must be set to `true` in any real (HTTPS) deployment -- it defaults to `false` only so local HTTP development keeps working.
