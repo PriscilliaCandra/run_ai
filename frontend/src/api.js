@@ -119,6 +119,10 @@ export async function fetchDashboardSummary() {
   return apiFetch('/dashboard/summary');
 }
 
+export async function fetchDashboardProgress(weeks = 8) {
+  return apiFetch(`/dashboard/progress?weeks=${weeks}`);
+}
+
 // --- Workouts ---
 
 export async function createWorkout(payload) {

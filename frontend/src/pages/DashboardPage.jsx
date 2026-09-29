@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PlusCircle, Calendar, TrendingUp, Info, CheckCircle2, CalendarClock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { fetchDashboardSummary } from '../api';
+import { fetchDashboardSummary, fetchDashboardProgress } from '../api';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import WorkoutCard from '../components/WorkoutCard';
@@ -144,8 +144,85 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Progress -- Phase 4: deterministic weekly trend, no scores/predictions */}
+          <ProgressSection />
         </div>
       )}
+    </div>
+  );
+}
+
+function ProgressSection() {
+  const [progress, setProgress] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setProgress(await fetchDashboardProgress(8));
+    } catch (err) {
+      setError(err.message || 'Failed to load your progress.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const hasAnyData = progress?.weeks.some((w) => w.run_count > 0);
+  const currentWeek = progress?.weeks[progress.weeks.length - 1];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6">
+      <h2 className="text-sm font-bold text-slate-800 mb-4">Your Progress</h2>
+      {loading ? (
+        <LoadingState label="Loading your progress..." />
+      ) : error ? (
+        <ErrorState message={error} actionLabel="Try Again" onAction={load} />
+      ) : !hasAnyData ? (
+        <p className="text-xs text-slate-500 py-4 text-center">Log a few workouts to start seeing your progress here.</p>
+      ) : (
+        <>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Weekly Distance</span>
+          <WeeklyDistanceBars weeks={progress.weeks} />
+          <p className="text-xs text-slate-600 mt-3">
+            <span className="font-semibold text-slate-900">{currentWeek.logged_days_count}</span> day{currentWeek.logged_days_count === 1 ? '' : 's'} logged this week
+          </p>
+          {progress.observations.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+              {progress.observations.map((obs, idx) => (
+                <p key={idx} className="text-xs text-slate-600">{obs}</p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function WeeklyDistanceBars({ weeks }) {
+  const maxDistance = Math.max(...weeks.map((w) => w.total_distance_km), 0.1);
+  return (
+    <div className="flex items-end gap-1 sm:gap-1.5 h-20">
+      {weeks.map((w) => {
+        const heightPct = Math.max((w.total_distance_km / maxDistance) * 100, w.total_distance_km > 0 ? 4 : 0);
+        return (
+          <div
+            key={w.week_start}
+            className="flex-1 h-full flex flex-col justify-end min-w-0"
+            title={`${w.week_start} to ${w.week_end}: ${w.total_distance_km.toFixed(1)} km${w.is_current_week ? ' (this week, in progress)' : ''}`}
+          >
+            <div
+              className={`w-full rounded-t-sm ${w.is_current_week ? 'bg-indigo-300 border border-dashed border-indigo-500' : 'bg-indigo-500'}`}
+              style={{ height: `${heightPct}%` }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

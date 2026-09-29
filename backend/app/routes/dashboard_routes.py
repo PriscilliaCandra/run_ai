@@ -1,7 +1,7 @@
 import json
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session as DBSession
 
 from app.auth.dependencies import get_current_user
@@ -14,8 +14,9 @@ from app.workouts.schemas import (
     ActivePlanSummary,
     TrainingPlanWorkoutResponse,
     WorkoutLogResponse,
+    ProgressResponse,
 )
-from app.workouts.service import build_enriched_tpw_response
+from app.workouts.service import build_enriched_tpw_response, bucket_weekly_totals, generate_observations
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -174,4 +175,53 @@ def get_dashboard_summary(
         this_month=this_month,
         recent_activities=[WorkoutLogResponse.from_model(w) for w in recent],
         has_any_workout_history=has_any_history,
+    )
+
+
+# Phase 4: 7 = the fixed observation lookback (current week + 6 preceding
+# weeks -- see PHASE_4_DESIGN.md Section 6.1). The fetch span is always at
+# least this large so a single query can serve both the requested chart
+# window and the observation computation, regardless of what `weeks` is.
+_OBSERVATION_LOOKBACK_WEEKS = 7
+
+
+@router.get("/progress", response_model=ProgressResponse)
+def get_dashboard_progress(
+    weeks: int = Query(8, ge=1, le=26),
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Deterministic weekly volume/consistency trend + at most 2 rule-based
+    observation sentences -- see PHASE_4_DESIGN.md in full. Read-only: no
+    row is ever written by this endpoint. Ownership is enforced by the
+    single query below (WorkoutLog.user_id == current_user.id); `weeks` is
+    the only client input and cannot express any identity.
+    """
+    today = date.today()
+    current_week_start = today - timedelta(days=today.weekday())
+
+    fetch_span_weeks = max(weeks, _OBSERVATION_LOOKBACK_WEEKS)
+    range_start = current_week_start - timedelta(weeks=fetch_span_weeks - 1)
+    range_end = current_week_start + timedelta(days=6)  # end of the current (partial) week
+
+    # One ownership-scoped query serves both the chart data and the
+    # observation computation -- see PHASE_4_DESIGN.md Section 12.
+    rows = (
+        db.query(WorkoutLog)
+        .filter(
+            WorkoutLog.user_id == current_user.id,
+            WorkoutLog.deleted_at.is_(None),
+            WorkoutLog.workout_date >= range_start,
+            WorkoutLog.workout_date <= range_end,
+        )
+        .all()
+    )
+
+    all_buckets = bucket_weekly_totals(rows, range_start, fetch_span_weeks, today)
+    observations = generate_observations(all_buckets[-_OBSERVATION_LOOKBACK_WEEKS:])
+
+    return ProgressResponse(
+        weeks=all_buckets[-weeks:],
+        observations=observations,
     )

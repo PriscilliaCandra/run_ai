@@ -250,3 +250,31 @@ class DashboardSummaryResponse(BaseModel):
     this_month: PeriodTotals
     recent_activities: List[WorkoutLogResponse]
     has_any_workout_history: bool
+
+
+class WeeklyProgressBucket(BaseModel):
+    """
+    One ISO calendar week (Monday-Sunday) of descriptive totals -- see
+    PHASE_4_DESIGN.md Sections 4-5. Always present even for a week with zero
+    logged workouts (zero-valued, never omitted, never null except pace).
+    """
+    week_start: date
+    week_end: date
+    is_current_week: bool  # true only for the single week containing "today" -- necessarily partial
+    total_distance_km: float
+    total_duration_seconds: int
+    run_count: int
+    logged_days_count: int  # COUNT(DISTINCT workout_date) -- may be < run_count
+    average_pace_display: Optional[str]  # volume-weighted; null when total_distance_km == 0
+
+
+class ProgressResponse(BaseModel):
+    """
+    GET /api/dashboard/progress response -- see PHASE_4_DESIGN.md Section 7.
+    `weeks` always has exactly the requested number of entries, oldest first,
+    current (partial) week last. `observations` is 0-2 deterministic,
+    template-based sentences (PHASE_4_DESIGN.md Section 6) -- never an LLM
+    output, never a score, never a prediction.
+    """
+    weeks: List[WeeklyProgressBucket]
+    observations: List[str]
