@@ -38,7 +38,7 @@ def test_dashboard_plan_without_workouts(client):
     body = res.json()
     assert body["active_plan"] is not None
     assert body["active_plan"]["current_week"] == 1
-    assert body["active_plan"]["week1_detail_available"] is True
+    assert body["active_plan"]["current_week_detail_available"] is True
     assert body["has_any_workout_history"] is False
 
 
@@ -65,21 +65,21 @@ def test_dashboard_plan_and_workouts(client):
     assert len(body["recent_activities"]) == 1
 
 
-def test_todays_scheduled_workout_present_during_week_one(client):
+def test_todays_scheduled_workout_present_during_active_plan(client):
     register_and_login(client)
     client.post("/api/plans/generate", json=make_profile_payload())
     res = client.get("/api/dashboard/summary")
     active_plan = res.json()["active_plan"]
-    assert active_plan["week1_detail_available"] is True
+    assert active_plan["current_week_detail_available"] is True
     assert active_plan["today_scheduled_workout"] is not None
     assert active_plan["today_scheduled_workout"]["day_of_week"] == date.today().strftime("%A")
 
 
-def test_week1_limitation_is_explicit_past_week_one(client):
-    """Beyond week 1, the dashboard must not invent a scheduled workout --
+def test_dashboard_past_plan_duration_shows_no_detail(client):
+    """Beyond total weeks of a plan, the dashboard must not invent a scheduled workout --
     it must explicitly say detail isn't available."""
     register_and_login(client)
-    plan_res = client.post("/api/plans/generate", json=make_profile_payload())
+    plan_res = client.post("/api/plans/generate", json=make_profile_payload(plan_duration_weeks=8))
     plan_id = plan_res.json()["plan_id"]
 
     from app.database import SessionLocal
@@ -87,15 +87,15 @@ def test_week1_limitation_is_explicit_past_week_one(client):
     db = SessionLocal()
     try:
         plan = db.query(TrainingPlan).filter(TrainingPlan.id == plan_id).first()
-        plan.start_date = date.today() - timedelta(days=14)  # pushes into week 3
+        plan.start_date = date.today() - timedelta(days=65)  # pushes past week 8
         db.commit()
     finally:
         db.close()
 
     res = client.get("/api/dashboard/summary")
     active_plan = res.json()["active_plan"]
-    assert active_plan["current_week"] >= 3
-    assert active_plan["week1_detail_available"] is False
+    assert active_plan["current_week"] == 8
+    assert active_plan["current_week_detail_available"] is False
     assert active_plan["today_scheduled_workout"] is None
 
 

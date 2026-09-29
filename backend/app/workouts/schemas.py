@@ -235,12 +235,10 @@ class ActivePlanSummary(BaseModel):
     current_week: int
     total_weeks: int
     today_scheduled_workout: Optional[TrainingPlanWorkoutResponse]
-    week1_detail_available: bool  # false => detailed daily workouts aren't materialized past week 1 (see PHASE_2_DESIGN.md Section 9.3)
-    # Phase 3 additive fields, all None/absent whenever week1_detail_available
-    # is False -- never fabricated for a week with no materialized schedule.
+    current_week_detail_available: bool  # false if detailed daily workouts aren't materialized for current week or plan is finished
     upcoming_scheduled_workout: Optional[TrainingPlanWorkoutResponse] = None
-    week1_completed_count: Optional[int] = None       # of the non-rest-day week-1 workouts
-    week1_total_loggable_count: Optional[int] = None  # total non-rest-day week-1 workouts
+    current_week_completed_count: Optional[int] = None       # of the non-rest-day current-week workouts
+    current_week_total_loggable_count: Optional[int] = None  # total non-rest-day current-week workouts
 
 
 class DashboardSummaryResponse(BaseModel):

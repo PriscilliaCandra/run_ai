@@ -256,13 +256,14 @@ export default function PlanResultPage({ planData, onNavigate, onSelectPlanForEv
       )}
 
       {/* Weekly Grid of Workouts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10 items-stretch">
         {currentWorkouts.map((workout, idx) => (
-          <WorkoutCard 
-            key={idx} 
-            workout={workout} 
-            isAiPlan={activeTab === 'ai'} 
-          />
+          <div key={idx} className="h-full flex flex-col">
+            <WorkoutCard 
+              workout={workout} 
+              isAiPlan={activeTab === 'ai'} 
+            />
+          </div>
         ))}
       </div>
 

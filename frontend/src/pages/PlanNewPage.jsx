@@ -143,7 +143,7 @@ export default function PlanNewPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className={labelClass}>Current Weekly Mileage (km)</label>
               <input type="number" step="0.5" min="5" required value={form.current_weekly_mileage} onChange={(e) => setForm({ ...form, current_weekly_mileage: e.target.value })} className={inputClass} />
@@ -151,6 +151,18 @@ export default function PlanNewPage() {
             <div>
               <label className={labelClass}>Easy Run Pace</label>
               <input type="text" required placeholder="06:00" value={form.easy_run_pace} onChange={(e) => setForm({ ...form, easy_run_pace: e.target.value })} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Plan Duration</label>
+              <select value={form.plan_duration_weeks} onChange={(e) => setForm({ ...form, plan_duration_weeks: parseInt(e.target.value) })} className={inputClass}>
+                <option value={4}>4 Weeks (Short Block)</option>
+                <option value={6}>6 Weeks</option>
+                <option value={8}>8 Weeks (Standard)</option>
+                <option value={12}>12 Weeks (Comprehensive)</option>
+                <option value={16}>16 Weeks (Marathon Prep)</option>
+                <option value={20}>20 Weeks</option>
+                <option value={24}>24 Weeks (Extended)</option>
+              </select>
             </div>
           </div>
 

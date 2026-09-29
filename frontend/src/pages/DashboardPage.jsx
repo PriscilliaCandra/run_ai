@@ -81,16 +81,16 @@ export default function DashboardPage() {
 
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Today's Workout</h3>
-                  {summary.active_plan.week1_total_loggable_count != null && (
+                  {summary.active_plan.current_week_total_loggable_count != null && (
                     <span className="text-[11px] font-semibold text-slate-500">
-                      {summary.active_plan.week1_completed_count} of {summary.active_plan.week1_total_loggable_count} planned runs logged this week
+                      {summary.active_plan.current_week_completed_count} of {summary.active_plan.current_week_total_loggable_count} planned runs logged this week
                     </span>
                   )}
                 </div>
-                {!summary.active_plan.week1_detail_available ? (
+                {!summary.active_plan.current_week_detail_available ? (
                   <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
                     <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>Detailed daily workouts aren't available past week 1 yet. Full weekly schedules are coming in a future update.</span>
+                    <span>Detailed daily workouts are not available for this week. If you have completed your training schedule, congratulations!</span>
                   </div>
                 ) : summary.active_plan.today_scheduled_workout ? (
                   <TodayWorkoutCard workout={summary.active_plan.today_scheduled_workout} navigate={navigate} />
@@ -98,7 +98,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-slate-500">No scheduled workout for today.</p>
                 )}
 
-                {summary.active_plan.week1_detail_available && summary.active_plan.upcoming_scheduled_workout && (
+                {summary.active_plan.current_week_detail_available && summary.active_plan.upcoming_scheduled_workout && (
                   <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-2.5">
                     <CalendarClock className="w-4 h-4 text-slate-400 shrink-0" />
                     <span className="text-xs text-slate-600">
@@ -229,48 +229,75 @@ function WeeklyDistanceBars({ weeks }) {
 
 function TodayWorkoutCard({ workout, navigate }) {
   const status = workout.completion_status; // null for rest days
+  const isRest = workout.workout_type.toLowerCase().includes('rest') || workout.distance_km === 0;
+
+  let topBanner = null;
+  if (status === 'completed') {
+    topBanner = (
+      <div className="bg-emerald-50/80 border-b border-emerald-100 px-3.5 py-2.5 flex items-center justify-between min-h-[40px]">
+        <span className="inline-flex items-center gap-1.5 text-emerald-800 font-semibold text-xs">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          Completed
+        </span>
+        {workout.linked_workout_logs?.[0] && (
+          <Link
+            to={`/workouts/${workout.linked_workout_logs[0].id}`}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+          >
+            View logged workout &rarr;
+          </Link>
+        )}
+      </div>
+    );
+  } else if (status) {
+    topBanner = (
+      <div className="bg-amber-50/80 border-b border-amber-100 px-3.5 py-2.5 flex items-center justify-between min-h-[40px]">
+        <span className="inline-flex items-center gap-1.5 text-amber-900 font-semibold text-xs">
+          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+          {completionLabel(status)}
+        </span>
+        <button
+          onClick={() => navigate('/workouts/new', { state: { scheduledWorkout: workout } })}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+        >
+          Log this workout &rarr;
+        </button>
+      </div>
+    );
+  } else if (isRest) {
+    topBanner = (
+      <div className="bg-slate-50 border-b border-slate-100 px-3.5 py-2.5 flex items-center justify-between min-h-[40px]">
+        <span className="text-slate-500 font-medium text-xs">Rest &amp; Recovery</span>
+        <span className="text-[11px] text-slate-400 font-medium">Scheduled Rest</span>
+      </div>
+    );
+  }
+
+  let footer = null;
+  if (status === 'completed' && workout.linked_workout_logs?.[0]) {
+    const log = workout.linked_workout_logs[0];
+    footer = (
+      <div className="p-3 bg-emerald-50/50 border-t border-emerald-100 text-xs text-emerald-900">
+        <span className="font-semibold text-emerald-800">Actual: </span>
+        <span>{log.distance_km.toFixed(2)} km &middot; {log.pace_display}</span>
+        {log.rpe != null && <span className="text-emerald-700"> &middot; RPE {log.rpe}/10</span>}
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {status && (
-        <div className="flex items-center justify-between mb-2">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-            status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-          }`}>
-            {status === 'completed' && <CheckCircle2 className="w-3 h-3" />}
-            {completionLabel(status)}
-          </span>
-          {status === 'completed' && workout.linked_workout_logs?.[0] ? (
-            <Link to={`/workouts/${workout.linked_workout_logs[0].id}`} className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">
-              View logged workout
-            </Link>
-          ) : (
-            <button
-              onClick={() => navigate('/workouts/new', { state: { scheduledWorkout: workout } })}
-              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
-            >
-              Log this workout
-            </button>
-          )}
-        </div>
-      )}
-      <WorkoutCard
-        workout={{
-          day: workout.day_of_week,
-          workout_type: workout.workout_type,
-          distance_km: workout.distance_km,
-          pace_target: workout.pace_target,
-          intensity_zone: workout.intensity_zone,
-          purpose: workout.purpose,
-        }}
-      />
-      {status === 'completed' && workout.linked_workout_logs?.[0] && (
-        <div className="mt-2 p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl text-xs text-emerald-900">
-          <span className="font-semibold">Actual: </span>
-          {workout.linked_workout_logs[0].distance_km.toFixed(2)} km &middot; {workout.linked_workout_logs[0].pace_display}
-          {workout.linked_workout_logs[0].rpe != null && <> &middot; RPE {workout.linked_workout_logs[0].rpe}/10</>}
-        </div>
-      )}
-    </div>
+    <WorkoutCard
+      workout={{
+        day: workout.day_of_week,
+        workout_type: workout.workout_type,
+        distance_km: workout.distance_km,
+        pace_target: workout.pace_target,
+        intensity_zone: workout.intensity_zone,
+        purpose: workout.purpose,
+      }}
+      topBanner={topBanner}
+      footer={footer}
+    />
   );
 }
 

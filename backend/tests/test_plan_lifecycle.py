@@ -27,18 +27,19 @@ def test_anonymous_plan_generation_creates_zero_training_plan_workouts(client):
         db.close()
 
 
-def test_consumer_plan_generation_creates_exactly_seven_week_one_workouts(client):
+def test_consumer_plan_generation_creates_all_weeks_workouts(client):
     register_and_login(client)
-    res = client.post("/api/plans/generate", json=make_profile_payload())
+    res = client.post("/api/plans/generate", json=make_profile_payload(plan_duration_weeks=8))
     plan_id = res.json()["plan_id"]
 
     workouts_res = client.get(f"/api/plans/{plan_id}/workouts")
     assert workouts_res.status_code == 200
     workouts = workouts_res.json()
-    assert len(workouts) == 7
-    assert all(w["week_number"] == 1 for w in workouts)
-    days = {w["day_of_week"] for w in workouts}
-    assert days == {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+    assert len(workouts) == 56  # 8 weeks * 7 days
+    assert set(w["week_number"] for w in workouts) == set(range(1, 9))
+    for w_num in range(1, 9):
+        w_days = {w["day_of_week"] for w in workouts if w["week_number"] == w_num}
+        assert w_days == {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
 
 
 def test_consumer_plan_gets_start_date_and_active_status(client):

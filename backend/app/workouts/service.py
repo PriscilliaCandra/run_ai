@@ -31,40 +31,63 @@ def archive_previous_active_plans(db: DBSession, user_id: str) -> None:
     ).update({TrainingPlan.status: "archived"})
 
 
-def materialize_week_one(db: DBSession, training_plan_id: str, rule_plan: Dict[str, Any]) -> None:
+def materialize_training_plan_workouts(db: DBSession, training_plan_id: str, rule_plan: Dict[str, Any]) -> None:
     """
-    Creates exactly 7 TrainingPlanWorkout rows (one per calendar day, Monday
-    through Sunday, including rest days) from week 1 of the deterministic
-    rule-based plan JSON. Only ever called for a consumer (user-owned) plan
-    -- see PHASE_2_DESIGN.md Section 3.2 for why only week 1 is materialized
-    (the rule engine does not produce daily detail for weeks 2+).
+    Creates TrainingPlanWorkout rows (7 per week, Monday through Sunday,
+    including rest days) for all weeks in the deterministic rule-based plan.
+    If 'weeks' is present in rule_plan, materializes all weeks (total_weeks * 7 rows).
+    Otherwise falls back to week 1 for backward compatibility with legacy plans.
     """
-    for w in rule_plan["week_1_plan"]["workouts"]:
-        db.add(TrainingPlanWorkout(
-            training_plan_id=training_plan_id,
-            week_number=1,
-            day_of_week=w["day"],
-            workout_type=w["workout_type"],
-            distance_meters=round(w["distance_km"] * 1000),
-            pace_target=w["pace_target"],
-            intensity_zone=w["intensity_zone"],
-            purpose=w["purpose"],
-        ))
+    if "weeks" in rule_plan and rule_plan["weeks"]:
+        for week_data in rule_plan["weeks"]:
+            w_num = week_data["week_number"]
+            for w in week_data["workouts"]:
+                db.add(TrainingPlanWorkout(
+                    training_plan_id=training_plan_id,
+                    week_number=w_num,
+                    day_of_week=w["day"],
+                    workout_type=w["workout_type"],
+                    distance_meters=round(w["distance_km"] * 1000),
+                    pace_target=w["pace_target"],
+                    intensity_zone=w["intensity_zone"],
+                    purpose=w["purpose"],
+                ))
+    elif "week_1_plan" in rule_plan:
+        for w in rule_plan["week_1_plan"]["workouts"]:
+            db.add(TrainingPlanWorkout(
+                training_plan_id=training_plan_id,
+                week_number=1,
+                day_of_week=w["day"],
+                workout_type=w["workout_type"],
+                distance_meters=round(w["distance_km"] * 1000),
+                pace_target=w["pace_target"],
+                intensity_zone=w["intensity_zone"],
+                purpose=w["purpose"],
+            ))
 
 
-def scheduled_date_for(plan_start_date: date, day_of_week: str) -> date:
+# Backwards compatibility alias
+materialize_week_one = materialize_training_plan_workouts
+
+
+def scheduled_date_for(plan_start_date: date, week_number_or_day: Any, day_of_week: Optional[str] = None) -> date:
     """
-    Maps a training_plan_workout's day_of_week label (a weekday NAME, e.g.
-    "Wednesday") to the one actual calendar date it represents in week 1,
-    given the plan's start_date. Every weekday name appears exactly once in
-    any 7 consecutive calendar days starting at start_date, so this is
-    always well-defined regardless of which weekday start_date itself falls
-    on (Monday, mid-week, or Sunday are all handled identically by this
-    formula) -- see PHASE_3_DESIGN.md Section 5.A.
+    Maps a training_plan_workout to its calendar date, accounting for week_number.
+    Supports both:
+      scheduled_date_for(plan_start_date, week_number, day_of_week)
+      scheduled_date_for(plan_start_date, day_of_week)  # defaults to week_number=1
     """
-    target_idx = DAYS_OF_WEEK.index(day_of_week)
+    if day_of_week is None:
+        week_number = 1
+        day_name = str(week_number_or_day)
+    else:
+        week_number = int(week_number_or_day)
+        day_name = day_of_week
+
+    target_idx = DAYS_OF_WEEK.index(day_name)
     offset = (target_idx - plan_start_date.weekday()) % 7
-    return plan_start_date + timedelta(days=offset)
+    week_anchor = plan_start_date + timedelta(weeks=week_number - 1)
+    return week_anchor + timedelta(days=offset)
 
 
 def is_rest_day(workout_type: str) -> bool:
@@ -108,7 +131,7 @@ def build_enriched_tpw_response(
     """
     from app.workouts.schemas import TrainingPlanWorkoutResponse, WorkoutLogResponse
 
-    sched_date = scheduled_date_for(plan_start_date, tpw.day_of_week)
+    sched_date = scheduled_date_for(plan_start_date, tpw.week_number, tpw.day_of_week)
 
     logs: List[WorkoutLog] = (
         db.query(WorkoutLog)

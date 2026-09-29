@@ -117,28 +117,28 @@ def test_own_plan_schedule_is_readable_and_carries_scheduled_dates(client):
     register_and_login(client)
     plan_id = _generate_owned_plan(client)
     workouts = _plan_workouts(client, plan_id)
-    assert len(workouts) == 7
+    assert len(workouts) == 56  # 8 weeks * 7 days
     for w in workouts:
         assert w["scheduled_date"] is not None
-    # Every calendar date in the 7-day window is represented exactly once.
+    # Every calendar date in the 56-day window is represented exactly once.
     dates = {w["scheduled_date"] for w in workouts}
-    assert len(dates) == 7
+    assert len(dates) == 56
 
 
-def test_no_fabricated_schedule_past_week_one(client):
+def test_no_fabricated_schedule_past_plan_duration(client):
     register_and_login(client)
     plan_id = _generate_owned_plan(client)
-    # Push start_date back 3 weeks so current_week resolves to week 3+.
-    _set_plan_start_date(plan_id, date.today() - timedelta(days=21))
+    # Push start_date back past the full 8-week duration (60 days)
+    _set_plan_start_date(plan_id, date.today() - timedelta(days=60))
 
     res = client.get("/api/dashboard/summary")
     assert res.status_code == 200
     active = res.json()["active_plan"]
-    assert active["week1_detail_available"] is False
+    assert active["current_week_detail_available"] is False
     assert active["today_scheduled_workout"] is None
     assert active["upcoming_scheduled_workout"] is None
-    assert active["week1_completed_count"] is None
-    assert active["week1_total_loggable_count"] is None
+    assert active["current_week_completed_count"] is None
+    assert active["current_week_total_loggable_count"] is None
 
 
 def test_anonymous_plan_workouts_have_no_scheduled_date_or_completion(client):
@@ -373,21 +373,21 @@ def test_dashboard_today_scheduled_carries_completion_and_links(client):
         assert active["today_scheduled_workout"]["completion_status"] is None
 
 
-def test_dashboard_week1_completion_count_reflects_logged_workouts(client):
+def test_dashboard_current_week_completion_count_reflects_logged_workouts(client):
     register_and_login(client)
     plan_id = _generate_owned_plan(client)
     workouts = _plan_workouts(client, plan_id)
-    loggable = [w for w in workouts if w["completion_status"] is not None]
+    current_week_loggable = [w for w in workouts if w["week_number"] == 1 and w["completion_status"] is not None]
 
     summary = client.get("/api/dashboard/summary").json()
     active = summary["active_plan"]
-    assert active["week1_total_loggable_count"] == len(loggable)
-    assert active["week1_completed_count"] == 0
+    assert active["current_week_total_loggable_count"] == len(current_week_loggable)
+    assert active["current_week_completed_count"] == 0
 
-    client.post("/api/workouts", json=make_workout_payload(training_plan_workout_id=loggable[0]["id"]))
+    client.post("/api/workouts", json=make_workout_payload(training_plan_workout_id=current_week_loggable[0]["id"]))
 
     summary_after = client.get("/api/dashboard/summary").json()
-    assert summary_after["active_plan"]["week1_completed_count"] == 1
+    assert summary_after["active_plan"]["current_week_completed_count"] == 1
 
 
 def test_dashboard_no_plan_has_no_scheduled_or_count_fields(client):

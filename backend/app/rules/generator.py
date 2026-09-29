@@ -259,22 +259,34 @@ def generate_rule_based_plan(profile: RunnerProfileCreate) -> Dict[str, Any]:
         feasibility_note = f"Target pace requires a {pace_delta_pct}% pace improvement. Aggressive overreach for an {profile.plan_duration_weeks}-week training window; elevated injury risk."
         feasibility_status = "Aggressive Overreach / High Fatigue Risk"
 
-    # 3. Workouts for Baseline Week (Week 1)
-    week_1_workouts = distribute_workouts_across_week(
-        profile=profile,
-        paces=paces,
-        target_pace_str=target_pace_str,
-        weekly_mileage=profile.current_weekly_mileage
-    )
-
-    actual_week_mileage = sum(w.distance_km for w in week_1_workouts)
-
-    # 4. Weekly progression summary across total plan weeks
+    # 3. Weekly progression summary across total plan weeks
     progression = generate_weekly_progression_summary(
         base_mileage=profile.current_weekly_mileage,
         total_weeks=profile.plan_duration_weeks,
         target_race_distance=profile.target_race_distance
     )
+
+    # 4. Generate daily workouts for every week in the progression schedule
+    weeks = []
+    for week_info in progression:
+        w_num = week_info["week_number"]
+        target_vol = week_info["target_mileage_km"]
+        w_workouts = distribute_workouts_across_week(
+            profile=profile,
+            paces=paces,
+            target_pace_str=target_pace_str,
+            weekly_mileage=target_vol
+        )
+        weeks.append({
+            "week_number": w_num,
+            "phase": week_info["phase"],
+            "focus_note": week_info["focus_note"],
+            "weekly_mileage_km": round(sum(w.distance_km for w in w_workouts), 1),
+            "workouts": [w.model_dump() for w in w_workouts],
+        })
+
+    week_1_workouts = weeks[0]["workouts"]
+    actual_week_mileage = weeks[0]["weekly_mileage_km"]
 
     # 5. Scientific 4-Part Traceability & Explainability Matrix
     explainability = {
@@ -341,8 +353,9 @@ def generate_rule_based_plan(profile: RunnerProfileCreate) -> Dict[str, Any]:
             "week_number": 1,
             "weekly_mileage_km": round(actual_week_mileage, 1),
             "focus": "Aerobic Base Calibration & Routine Adaptation",
-            "workouts": [w.model_dump() for w in week_1_workouts]
+            "workouts": week_1_workouts
         },
         "progression_schedule": progression,
+        "weeks": weeks,
         "explainability": explainability
     }

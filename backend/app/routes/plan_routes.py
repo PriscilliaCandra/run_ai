@@ -13,7 +13,7 @@ from app.schemas import RunnerProfileCreate, PlanGenerationResponse
 from app.rules.generator import generate_rule_based_plan
 from app.ai.llm_service import get_personalized_ai_plan
 from app.workouts.schemas import TrainingPlanWorkoutResponse
-from app.workouts.service import archive_previous_active_plans, materialize_week_one, build_enriched_tpw_response
+from app.workouts.service import archive_previous_active_plans, materialize_training_plan_workouts, build_enriched_tpw_response
 
 router = APIRouter(prefix="/plans", tags=["Training Plans"])
 
@@ -42,7 +42,7 @@ async def generate_plan(
 
     Consumer plan lifecycle (Phase 2, authenticated requests only): the new
     plan becomes the user's sole 'active' plan (any previously active plan
-    is archived first), gets start_date = today, and has week 1 of its
+    is archived first), gets start_date = today, and has its
     schedule materialized into training_plan_workouts. None of this ever
     happens for an anonymous research plan.
     """
@@ -90,7 +90,7 @@ async def generate_plan(
         archive_previous_active_plans(db, current_user.id)
         plan_db.start_date = date.today()
         plan_db.status = "active"
-        materialize_week_one(db, plan_db.id, rule_plan)
+        materialize_training_plan_workouts(db, plan_db.id, rule_plan)
 
     db.commit()
     db.refresh(plan_db)
