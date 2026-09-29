@@ -34,6 +34,15 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["LLM_PROVIDER"] = "auto"
+os.environ["ALLOWED_ORIGINS"] = "http://localhost:5173,http://127.0.0.1:5173"
+os.environ["SESSION_COOKIE_SECURE"] = "false"
+
+# The default test origin: matches ALLOWED_ORIGINS above, used by the `client`
+# fixture so authenticated state-changing requests (POST/PATCH/DELETE with a
+# session cookie) pass the CSRF Origin-check middleware by default. Tests
+# that specifically exercise CSRF rejection build their own TestClient
+# without this default (see test_auth_security.py).
+VALID_TEST_ORIGIN = "http://localhost:5173"
 
 import app.models  # noqa: E402,F401  (registers all tables on Base.metadata up front)
 
@@ -54,9 +63,28 @@ def _isolated_schema():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting():
+    """
+    Rate limiting uses an in-memory store shared across the whole pytest
+    process, so without this, unrelated tests would spuriously start
+    receiving 429s once enough requests accumulate across the suite.
+    Disabled by default; the dedicated rate-limiting tests re-enable and
+    reset it explicitly for just their own scope.
+    """
+    from app.core.rate_limit import limiter
+    limiter.enabled = False
+    yield
+    limiter.enabled = False
+
+
 @pytest.fixture()
 def client():
-    """A FastAPI TestClient wired to the isolated temp database (never the real one)."""
+    """A FastAPI TestClient wired to the isolated temp database (never the real one).
+    Carries a default Origin header matching ALLOWED_ORIGINS so authenticated
+    mutating requests pass the CSRF Origin-check middleware."""
     from fastapi.testclient import TestClient
     from app.main import app as fastapi_app
-    return TestClient(fastapi_app)
+    test_client = TestClient(fastapi_app)
+    test_client.headers.update({"Origin": VALID_TEST_ORIGIN})
+    return test_client

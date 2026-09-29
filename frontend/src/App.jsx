@@ -1,178 +1,95 @@
-import React, { useState } from 'react';
-import { Activity, PlusCircle, Calendar, Star, BarChart2, Home as HomeIcon, Menu, X } from 'lucide-react';
-import HomePage from './pages/HomePage';
-import CreatePlanPage from './pages/CreatePlanPage';
-import PlanResultPage from './pages/PlanResultPage';
-import PlanDetailPage from './pages/PlanDetailPage';
-import EvaluationPage from './pages/EvaluationPage';
-import EvaluationStatsPage from './pages/EvaluationStatsPage';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import ConsumerLayout from './layouts/ConsumerLayout';
+
+import LandingPage from './pages/LandingPage';
+import ProfilePage from './pages/ProfilePage';
+import PhaseTwoPlaceholderPage from './pages/PhaseTwoPlaceholderPage';
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import ResearchApp from './ResearchApp';
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [currentPlan, setCurrentPlan] = useState(null);
-  const [evaluatingPlanId, setEvaluatingPlanId] = useState(null);
-  const [evaluatingPlanType, setEvaluatingPlanType] = useState('ai_personalized');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const handlePlanGenerated = (planData) => {
-    setCurrentPlan(planData);
-    setEvaluatingPlanId(planData.plan_id);
-    setEvaluatingPlanType('ai_personalized');
-    setCurrentPage('result');
-  };
-
-  const handleSelectPlanForEvaluation = (planId, planType = 'ai_personalized') => {
-    setEvaluatingPlanId(planId);
-    setEvaluatingPlanType(planType);
-    setCurrentPage('evaluate');
-  };
-
-  const goTo = (page) => {
-    setCurrentPage(page);
-    setMobileMenuOpen(false);
-  };
-
-  const NAV_ITEMS = [
-    { key: 'home', label: 'Home', icon: HomeIcon, iconClass: '', visible: true },
-    { key: 'create', label: 'New Plan', icon: PlusCircle, iconClass: 'text-indigo-600', visible: true },
-    { key: 'result', label: 'Current Plan', icon: Calendar, iconClass: '', visible: !!currentPlan },
-    { key: 'evaluate', label: 'Research Evaluation', icon: Star, iconClass: 'text-amber-500 fill-amber-500', visible: true },
-    { key: 'stats', label: 'Survey Stats', icon: BarChart2, iconClass: 'text-slate-500', visible: true },
-  ];
-
-  const navButtonClass = (key) =>
-    `px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center space-x-1.5 whitespace-nowrap ${
-      currentPage === key
-        ? key === 'evaluate'
-          ? 'bg-emerald-50 text-emerald-700 font-bold'
-          : 'bg-indigo-50 text-indigo-700 font-bold'
-        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-    }`;
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* Navigation Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          {/* Logo / Branding */}
-          <div
-            onClick={() => goTo('home')}
-            className="flex items-center space-x-2.5 cursor-pointer select-none min-w-0"
-          >
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-xs">
-              <Activity className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="font-black text-slate-900 text-sm sm:text-base tracking-tight leading-tight flex items-center space-x-1.5">
-                <span className="truncate">RunAI Recommendation</span>
-                <span className="hidden md:inline-block shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">S2 PROTOTYPE</span>
-              </div>
-              <div className="hidden sm:block text-[10px] text-slate-400 font-medium truncate">BINUS University • S2 Information Technology</div>
-            </div>
-          </div>
+    <AuthProvider>
+      <Routes>
+        {/* The unmodified S2 research prototype: anonymous, no login required. */}
+        <Route path="/research/*" element={<ResearchApp />} />
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden sm:flex items-center space-x-1 text-xs font-semibold shrink-0">
-            {NAV_ITEMS.filter((item) => item.visible).map((item) => (
-              <button key={item.key} onClick={() => goTo(item.key)} className={navButtonClass(item.key)}>
-                <item.icon className={`w-3.5 h-3.5 shrink-0 ${item.iconClass}`} />
-                <span className="hidden lg:inline">{item.label}</span>
-                <span className="lg:hidden">
-                  {item.key === 'evaluate' ? 'Evaluation' : item.key === 'stats' ? 'Stats' : item.label}
-                </span>
-              </button>
-            ))}
-          </nav>
+        {/* Auth pages have their own minimal centered layout (see LoginPage etc.),
+            not the consumer app chrome. */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-          {/* Mobile menu toggle */}
-          <button
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            className="sm:hidden -mr-1.5 p-2.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer shrink-0"
-            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
+        {/* Consumer product shell */}
+        <Route element={<ConsumerLayout />}>
+          <Route path="/" element={<LandingPage />} />
 
-        {/* Mobile Navigation Drawer */}
-        {mobileMenuOpen && (
-          <nav className="sm:hidden border-t border-slate-200 bg-white px-3 py-2 flex flex-col gap-1 text-sm font-semibold">
-            {NAV_ITEMS.filter((item) => item.visible).map((item) => (
-              <button
-                key={item.key}
-                onClick={() => goTo(item.key)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors cursor-pointer flex items-center space-x-2.5 min-h-[44px] ${
-                  currentPage === item.key
-                    ? item.key === 'evaluate'
-                      ? 'bg-emerald-50 text-emerald-700 font-bold'
-                      : 'bg-indigo-50 text-indigo-700 font-bold'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <item.icon className={`w-4 h-4 shrink-0 ${item.iconClass}`} />
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-        )}
-      </header>
-
-      {/* Main Content View Switcher */}
-      <main className="flex-1">
-        {currentPage === 'home' && (
-          <HomePage onNavigate={goTo} />
-        )}
-
-        {currentPage === 'create' && (
-          <CreatePlanPage onPlanGenerated={handlePlanGenerated} />
-        )}
-
-        {currentPage === 'result' && (
-          <PlanResultPage
-            planData={currentPlan}
-            onNavigate={goTo}
-            onSelectPlanForEvaluation={handleSelectPlanForEvaluation}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
           />
-        )}
 
-        {currentPage === 'details' && (
-          <PlanDetailPage
-            planData={currentPlan}
-            onNavigate={goTo}
+          {/* Routing/auth foundation only -- these are placeholders until
+              Phase 2 (dashboard + workout logging) is approved and built. */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <PhaseTwoPlaceholderPage
+                  title="Your Dashboard"
+                  description="This week's summary, today's workout, and recent activity will live here."
+                />
+              </ProtectedRoute>
+            }
           />
-        )}
-
-        {currentPage === 'evaluate' && (
-          <EvaluationPage
-            planId={evaluatingPlanId || (currentPlan ? currentPlan.plan_id : null)}
-            planType={evaluatingPlanType}
-            onSelectPlanType={setEvaluatingPlanType}
-            onNavigate={goTo}
+          <Route
+            path="/plans"
+            element={
+              <ProtectedRoute>
+                <PhaseTwoPlaceholderPage
+                  title="Your Training Plans"
+                  description="A list of your generated training plans will appear here."
+                />
+              </ProtectedRoute>
+            }
           />
-        )}
+          <Route
+            path="/plans/new"
+            element={
+              <ProtectedRoute>
+                <PhaseTwoPlaceholderPage
+                  title="Create a Training Plan"
+                  description="The consumer plan-creation flow will live here, built on the same rule-based + AI engine as the research prototype."
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/plans/:id"
+            element={
+              <ProtectedRoute>
+                <PhaseTwoPlaceholderPage
+                  title="Training Plan"
+                  description="Your plan's weekly schedule and detail view will live here."
+                />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
 
-        {currentPage === 'stats' && (
-          <EvaluationStatsPage onNavigate={goTo} />
-        )}
-      </main>
-
-      {/* Academic Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-xs text-slate-500">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-          <div>
-            <span className="font-semibold text-slate-700">
-              "Design and Evaluation of an AI-Based Personalized Running Training Recommendation System"
-            </span>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              BINUS University • Master of Information Technology (S2) Thesis Research Prototype
-            </p>
-          </div>
-          <div className="text-[11px] text-slate-400">
-            Rule-Based Physiology (VDOT & 80/20) + Modular LLM • Educational & Research Prototype
-          </div>
-        </div>
-      </footer>
-    </div>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }

@@ -1,7 +1,33 @@
 """Small, dependency-free helpers shared across the backend test suite."""
+import itertools
 from typing import Any, Dict
 
 from app.schemas import RunnerProfileCreate
+
+_email_counter = itertools.count(1)
+
+
+def unique_email() -> str:
+    return f"test-user-{next(_email_counter)}@example.com"
+
+
+def make_register_payload(**overrides: Any) -> Dict[str, Any]:
+    payload = {
+        "email": unique_email(),
+        "password": "CorrectHorse123",
+        "display_name": "Test Runner",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def register_and_login(client, **overrides: Any) -> Dict[str, Any]:
+    """Registers a new user (which also logs them in / sets the session cookie
+    on the given TestClient) and returns the registration response JSON."""
+    payload = make_register_payload(**overrides)
+    res = client.post("/api/auth/register", json=payload)
+    assert res.status_code == 201, f"registration failed: {res.status_code} {res.text}"
+    return res.json()
 
 DEFAULT_PROFILE_KWARGS: Dict[str, Any] = dict(
     age=21,

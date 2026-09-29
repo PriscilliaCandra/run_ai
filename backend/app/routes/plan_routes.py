@@ -1,10 +1,13 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
+from app.auth.dependencies import get_optional_current_user
+from app.core.rate_limit import limiter, _current_user_or_ip_key
+from app.config import settings
 from app.database import get_db
-from app.models import RunnerProfile, TrainingPlan
+from app.models import RunnerProfile, TrainingPlan, User
 from app.schemas import RunnerProfileCreate, PlanGenerationResponse
 from app.rules.generator import generate_rule_based_plan
 from app.ai.llm_service import get_personalized_ai_plan
@@ -12,7 +15,13 @@ from app.ai.llm_service import get_personalized_ai_plan
 router = APIRouter(prefix="/plans", tags=["Training Plans"])
 
 @router.post("/generate", response_model=PlanGenerationResponse, status_code=status.HTTP_201_CREATED)
-async def generate_plan(profile_in: RunnerProfileCreate, db: Session = Depends(get_db)):
+@limiter.limit(settings.RATE_LIMIT_PLAN_GENERATION, key_func=_current_user_or_ip_key)
+async def generate_plan(
+    request: Request,
+    profile_in: RunnerProfileCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
     Core Hybrid Endpoint:
     1. Validates Runner Profile
@@ -20,6 +29,13 @@ async def generate_plan(profile_in: RunnerProfileCreate, db: Session = Depends(g
     3. Invokes Modular LLM to generate enriched personalized workouts within physiological constraints
     4. Persists runner profile and plan in SQLite database
     5. Returns both rule-based baseline and AI-personalized plan for research evaluation
+
+    Ownership: if the request carries a valid session, the created plan is
+    attached to that user (user_id set). Anonymous requests (no session --
+    the existing, unchanged research flow) always produce a plan with
+    user_id = NULL, exactly as before. A plan is never retroactively
+    attached to a user after the fact, and the client can never set
+    user_id itself -- it is derived solely from the authenticated session.
     """
     # 1. Run deterministic rule-based training recommendation
     rule_plan = generate_rule_based_plan(profile_in)
@@ -49,6 +65,7 @@ async def generate_plan(profile_in: RunnerProfileCreate, db: Session = Depends(g
     # 4. Persist generated plan with both baseline and AI versions
     plan_db = TrainingPlan(
         runner_profile_id=profile_db.id,
+        user_id=current_user.id if current_user else None,
         calculated_vdot=rule_plan["vdot"],
         target_pace=rule_plan["target_pace_per_km"],
         rule_based_plan_json=json.dumps(rule_plan),
@@ -74,11 +91,29 @@ async def generate_plan(profile_in: RunnerProfileCreate, db: Session = Depends(g
 
 
 @router.get("/{plan_id}", response_model=PlanGenerationResponse)
-def get_plan_by_id(plan_id: str, db: Session = Depends(get_db)):
-    """Retrieves an existing generated training plan for review or evaluation."""
+def get_plan_by_id(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """
+    Retrieves an existing generated training plan.
+
+    Ownership: an anonymous research plan (user_id IS NULL) remains
+    reachable without authentication, exactly as before -- this is the
+    existing research flow and must not require login. A user-owned plan
+    (user_id IS NOT NULL) is only returned to that same authenticated user;
+    anyone else (including another logged-in user or an anonymous caller)
+    gets the same generic 404 a nonexistent plan would return, so the
+    endpoint never reveals whether a given ID belongs to someone else.
+    """
     plan_db = db.query(TrainingPlan).filter(TrainingPlan.id == plan_id).first()
     if not plan_db:
         raise HTTPException(status_code=404, detail="Training plan not found")
+
+    if plan_db.user_id is not None:
+        if current_user is None or current_user.id != plan_db.user_id:
+            raise HTTPException(status_code=404, detail="Training plan not found")
 
     return PlanGenerationResponse(
         plan_id=plan_db.id,
@@ -95,8 +130,19 @@ def get_plan_by_id(plan_id: str, db: Session = Depends(get_db)):
 
 @router.get("", response_model=List[Dict[str, Any]])
 def list_recent_plans(db: Session = Depends(get_db), limit: int = 10):
-    """Lists recent anonymous training plans."""
-    plans = db.query(TrainingPlan).order_by(TrainingPlan.created_at.desc()).limit(limit).all()
+    """
+    Lists recent ANONYMOUS (research) training plans only -- matches this
+    endpoint's original research purpose. User-owned plans (user_id IS NOT
+    NULL) are deliberately excluded here so a public/unauthenticated caller
+    can never enumerate other users' plans through this listing.
+    """
+    plans = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.user_id.is_(None))
+        .order_by(TrainingPlan.created_at.desc())
+        .limit(limit)
+        .all()
+    )
     results = []
     for p in plans:
         results.append({
