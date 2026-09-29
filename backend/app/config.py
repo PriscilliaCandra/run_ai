@@ -54,5 +54,8 @@ class Settings(BaseModel):
     RATE_LIMIT_REGISTER: str = os.getenv("RATE_LIMIT_REGISTER", "10/hour")
     RATE_LIMIT_PASSWORD_RESET: str = os.getenv("RATE_LIMIT_PASSWORD_RESET", "3/hour")
     RATE_LIMIT_PLAN_GENERATION: str = os.getenv("RATE_LIMIT_PLAN_GENERATION", "20/hour")
+    # Workout logging has no LLM cost, but still deserves a sane ceiling
+    # against scripted abuse (Phase 2).
+    RATE_LIMIT_WORKOUT_WRITE: str = os.getenv("RATE_LIMIT_WORKOUT_WRITE", "60/hour")
 
 settings = Settings()

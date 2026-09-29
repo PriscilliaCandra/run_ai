@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Text, DateTime, ForeignKey, Boolean, Index
+from sqlalchemy import Column, String, Integer, Float, Text, DateTime, Date, ForeignKey, Boolean, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -29,6 +29,7 @@ class User(Base):
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     training_plans = relationship("TrainingPlan", back_populates="user")
+    workout_logs = relationship("WorkoutLog", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserProfile(Base):
@@ -124,6 +125,14 @@ class TrainingPlan(Base):
     # set this value itself.
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
+    # Consumer plan lifecycle (Phase 2). Both nullable: NULL for every
+    # anonymous research plan, which never sets or reads these fields.
+    # For a consumer plan: start_date = the day it was generated,
+    # status one of 'active' | 'archived' (see app/routes/plan_routes.py --
+    # only one 'active' consumer plan may exist per user at a time).
+    start_date = Column(Date, nullable=True)
+    status = Column(String(20), nullable=True)
+
     calculated_vdot = Column(Float, nullable=False)
     target_pace = Column(String(10), nullable=False)
 
@@ -138,6 +147,7 @@ class TrainingPlan(Base):
     profile = relationship("RunnerProfile", back_populates="training_plans")
     evaluations = relationship("PlanEvaluation", back_populates="plan", cascade="all, delete-orphan")
     user = relationship("User", back_populates="training_plans")
+    scheduled_workouts = relationship("TrainingPlanWorkout", back_populates="training_plan", cascade="all, delete-orphan")
 
 
 class PlanEvaluation(Base):
@@ -159,3 +169,82 @@ class PlanEvaluation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     plan = relationship("TrainingPlan", back_populates="evaluations")
+
+
+class TrainingPlanWorkout(Base):
+    """
+    A SCHEDULED/PLANNED workout day within a consumer training plan --
+    distinct from WorkoutLog (an ACTUAL/completed workout). Read-only in
+    Phase 2: a materialized snapshot of week 1 of the plan's generated JSON
+    (rule_based_plan_json), taken once at plan-generation time.
+
+    Only ever created for consumer plans (training_plans.user_id IS NOT
+    NULL) -- anonymous research plans get zero rows here. Only week 1 is
+    materialized because the rule engine (app/rules/generator.py) only
+    produces full daily detail for week 1; weeks 2+ are intentionally not
+    fabricated (see PHASE_2_DESIGN.md Section 3.2 / Section 6).
+    """
+    __tablename__ = "training_plan_workouts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    training_plan_id = Column(String(36), ForeignKey("training_plans.id"), nullable=False, index=True)
+    week_number = Column(Integer, nullable=False)
+    day_of_week = Column(String(10), nullable=False)  # "Monday".."Sunday"
+    workout_type = Column(String(30), nullable=False)  # verbatim from the plan JSON, e.g. "Interval Training"
+    distance_meters = Column(Integer, nullable=False)
+    pace_target = Column(String(40), nullable=False)  # verbatim string, e.g. "05:15 - 05:30 /km"
+    intensity_zone = Column(String(60), nullable=False)
+    purpose = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    training_plan = relationship("TrainingPlan", back_populates="scheduled_workouts")
+    workout_logs = relationship("WorkoutLog", back_populates="training_plan_workout")
+
+    __table_args__ = (
+        Index("ix_tpw_plan_week", "training_plan_id", "week_number"),
+        UniqueConstraint("training_plan_id", "week_number", "day_of_week", name="uq_tpw_plan_week_day"),
+    )
+
+
+class WorkoutLog(Base):
+    """
+    An ACTUAL/completed workout logged by a consumer user -- distinct from
+    TrainingPlanWorkout (a scheduled/planned day). Always user-owned;
+    optionally linked to the TrainingPlanWorkout it was performed for
+    (unused by any Phase 2 UI feature yet, but validated end-to-end now --
+    see app/routes/workout_routes.py's cross-user-linking guard -- so
+    Phase 3 needs no further schema/validation work to use it safely).
+    """
+    __tablename__ = "workout_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    workout_date = Column(Date, nullable=False)  # plain calendar date, no time-of-day, no timezone conversion
+
+    # Stored as whole meters/seconds (not float km) to avoid floating-point
+    # drift when summing many rows for weekly/monthly statistics. Pace is
+    # NEVER stored -- always derived server-side from these two fields.
+    distance_meters = Column(Integer, nullable=False)
+    duration_seconds = Column(Integer, nullable=False)
+
+    workout_type = Column(String(20), nullable=False)  # EASY | LONG_RUN | TEMPO | INTERVAL | RECOVERY | RACE | OTHER
+    avg_heart_rate = Column(Integer, nullable=True)
+    max_heart_rate = Column(Integer, nullable=True)
+    cadence_spm = Column(Integer, nullable=True)
+    elevation_gain_m = Column(Integer, nullable=True)
+    rpe = Column(Integer, nullable=True)  # 1-10, Rate of Perceived Exertion
+    notes = Column(Text, nullable=True)
+
+    training_plan_workout_id = Column(String(36), ForeignKey("training_plan_workouts.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)  # soft delete -- rows are never physically removed
+
+    user = relationship("User", back_populates="workout_logs")
+    training_plan_workout = relationship("TrainingPlanWorkout", back_populates="workout_logs")
+
+    __table_args__ = (
+        Index("ix_workout_logs_user_date", "user_id", "workout_date"),
+        Index("ix_workout_logs_user_deleted", "user_id", "deleted_at"),
+    )

@@ -1,5 +1,6 @@
 """Small, dependency-free helpers shared across the backend test suite."""
 import itertools
+from datetime import date
 from typing import Any, Dict
 
 from app.schemas import RunnerProfileCreate
@@ -55,6 +56,17 @@ def make_profile(**overrides: Any) -> RunnerProfileCreate:
 def make_profile_payload(**overrides: Any) -> Dict[str, Any]:
     """Same as make_profile(), but as a plain JSON-serializable dict for API requests."""
     return {**DEFAULT_PROFILE_KWARGS, **overrides}
+
+
+def make_workout_payload(**overrides: Any) -> Dict[str, Any]:
+    payload = {
+        "workout_date": date.today().isoformat(),
+        "distance_meters": 5000,
+        "duration_seconds": 1800,
+        "workout_type": "EASY",
+    }
+    payload.update(overrides)
+    return payload
 
 
 def build_valid_ai_payload(rule_plan: Dict[str, Any]) -> Dict[str, Any]:

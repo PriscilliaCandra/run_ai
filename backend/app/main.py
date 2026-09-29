@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.database import engine, Base
-from app.routes import plan_routes, evaluation_routes, profile_routes
+from app.routes import plan_routes, evaluation_routes, profile_routes, workout_routes, dashboard_routes
 from app.auth import routes as auth_routes
 from app.core.rate_limit import limiter
 from app.core.csrf import CSRFOriginCheckMiddleware
@@ -52,6 +52,8 @@ app.include_router(auth_routes.router, prefix="/api")
 app.include_router(profile_routes.router, prefix="/api")
 app.include_router(plan_routes.router, prefix="/api")
 app.include_router(evaluation_routes.router, prefix="/api")
+app.include_router(workout_routes.router, prefix="/api")
+app.include_router(dashboard_routes.router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():

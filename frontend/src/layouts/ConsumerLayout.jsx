@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { Activity, LayoutDashboard, User, LogOut, LogIn, UserPlus, Menu, X } from 'lucide-react';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Activity, LayoutDashboard, FileText, ListChecks, User, LogOut, LogIn, UserPlus, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+const NAV_ITEMS = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/plans', label: 'Plans', icon: FileText },
+  { to: '/history', label: 'History', icon: ListChecks },
+  { to: '/profile', label: 'Profile', icon: User },
+];
+
 export default function ConsumerLayout() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -14,11 +21,21 @@ export default function ConsumerLayout() {
     navigate('/');
   };
 
+  const desktopLinkClass = ({ isActive }) =>
+    `px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+      isActive ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+    }`;
+
+  const mobileLinkClass = ({ isActive }) =>
+    `px-3 py-2.5 rounded-lg flex items-center gap-2.5 min-h-[44px] ${
+      isActive ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'
+    }`;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          <Link to="/" className="flex items-center gap-2.5 select-none min-w-0">
+          <Link to={isAuthenticated ? '/dashboard' : '/'} className="flex items-center gap-2.5 select-none min-w-0">
             <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-xs">
               <Activity className="w-5 h-5" />
             </div>
@@ -28,12 +45,11 @@ export default function ConsumerLayout() {
           <nav className="hidden sm:flex items-center gap-1 text-xs font-semibold">
             {isAuthenticated ? (
               <>
-                <Link to="/dashboard" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5">
-                  <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
-                </Link>
-                <Link to="/profile" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5" /> Profile
-                </Link>
+                {NAV_ITEMS.map((item) => (
+                  <NavLink key={item.to} to={item.to} className={desktopLinkClass}>
+                    <item.icon className="w-3.5 h-3.5" /> {item.label}
+                  </NavLink>
+                ))}
                 <button onClick={handleLogout} className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer">
                   <LogOut className="w-3.5 h-3.5" /> Log Out
                 </button>
@@ -64,12 +80,11 @@ export default function ConsumerLayout() {
           <nav className="sm:hidden border-t border-slate-200 bg-white px-3 py-2 flex flex-col gap-1 text-sm font-semibold">
             {isAuthenticated ? (
               <>
-                <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2.5 min-h-[44px]">
-                  <LayoutDashboard className="w-4 h-4" /> Dashboard
-                </Link>
-                <Link to="/profile" onClick={() => setMenuOpen(false)} className="px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2.5 min-h-[44px]">
-                  <User className="w-4 h-4" /> Profile
-                </Link>
+                {NAV_ITEMS.map((item) => (
+                  <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)} className={mobileLinkClass}>
+                    <item.icon className="w-4 h-4" /> {item.label}
+                  </NavLink>
+                ))}
                 <button onClick={handleLogout} className="text-left px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2.5 min-h-[44px] cursor-pointer">
                   <LogOut className="w-4 h-4" /> Log Out
                 </button>

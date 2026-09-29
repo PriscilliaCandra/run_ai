@@ -6,7 +6,13 @@ import ConsumerLayout from './layouts/ConsumerLayout';
 
 import LandingPage from './pages/LandingPage';
 import ProfilePage from './pages/ProfilePage';
-import PhaseTwoPlaceholderPage from './pages/PhaseTwoPlaceholderPage';
+import DashboardPage from './pages/DashboardPage';
+import PlansPage from './pages/PlansPage';
+import PlanNewPage from './pages/PlanNewPage';
+import PlanDetailConsumerPage from './pages/PlanDetailConsumerPage';
+import HistoryPage from './pages/HistoryPage';
+import LogWorkoutPage from './pages/LogWorkoutPage';
+import WorkoutDetailPage from './pages/WorkoutDetailPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -27,65 +33,20 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Consumer product shell */}
+        {/* Consumer product shell (Phase 2) */}
         <Route element={<ConsumerLayout />}>
           <Route path="/" element={<LandingPage />} />
 
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
 
-          {/* Routing/auth foundation only -- these are placeholders until
-              Phase 2 (dashboard + workout logging) is approved and built. */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <PhaseTwoPlaceholderPage
-                  title="Your Dashboard"
-                  description="This week's summary, today's workout, and recent activity will live here."
-                />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/plans"
-            element={
-              <ProtectedRoute>
-                <PhaseTwoPlaceholderPage
-                  title="Your Training Plans"
-                  description="A list of your generated training plans will appear here."
-                />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/plans/new"
-            element={
-              <ProtectedRoute>
-                <PhaseTwoPlaceholderPage
-                  title="Create a Training Plan"
-                  description="The consumer plan-creation flow will live here, built on the same rule-based + AI engine as the research prototype."
-                />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/plans/:id"
-            element={
-              <ProtectedRoute>
-                <PhaseTwoPlaceholderPage
-                  title="Training Plan"
-                  description="Your plan's weekly schedule and detail view will live here."
-                />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
+          <Route path="/plans/new" element={<ProtectedRoute><PlanNewPage /></ProtectedRoute>} />
+          <Route path="/plans/:id" element={<ProtectedRoute><PlanDetailConsumerPage /></ProtectedRoute>} />
+
+          <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="/workouts/new" element={<ProtectedRoute><LogWorkoutPage /></ProtectedRoute>} />
+          <Route path="/workouts/:id" element={<ProtectedRoute><WorkoutDetailPage /></ProtectedRoute>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

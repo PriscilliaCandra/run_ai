@@ -9,6 +9,7 @@
 *.sqlite3
 backend/running_research.db.bak_*
 backend/running_research.db.PRE_PHASE1_BACKUP_*
+backend/running_research.db.PRE_PHASE2_BACKUP_*
 
 # Python
 __pycache__/

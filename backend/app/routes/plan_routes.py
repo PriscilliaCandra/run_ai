@@ -1,16 +1,19 @@
 import json
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
-from app.auth.dependencies import get_optional_current_user
+from app.auth.dependencies import get_current_user, get_optional_current_user
 from app.core.rate_limit import limiter, _current_user_or_ip_key
 from app.config import settings
 from app.database import get_db
-from app.models import RunnerProfile, TrainingPlan, User
+from app.models import RunnerProfile, TrainingPlan, TrainingPlanWorkout, User
 from app.schemas import RunnerProfileCreate, PlanGenerationResponse
 from app.rules.generator import generate_rule_based_plan
 from app.ai.llm_service import get_personalized_ai_plan
+from app.workouts.schemas import TrainingPlanWorkoutResponse
+from app.workouts.service import archive_previous_active_plans, materialize_week_one
 
 router = APIRouter(prefix="/plans", tags=["Training Plans"])
 
@@ -36,6 +39,12 @@ async def generate_plan(
     user_id = NULL, exactly as before. A plan is never retroactively
     attached to a user after the fact, and the client can never set
     user_id itself -- it is derived solely from the authenticated session.
+
+    Consumer plan lifecycle (Phase 2, authenticated requests only): the new
+    plan becomes the user's sole 'active' plan (any previously active plan
+    is archived first), gets start_date = today, and has week 1 of its
+    schedule materialized into training_plan_workouts. None of this ever
+    happens for an anonymous research plan.
     """
     # 1. Run deterministic rule-based training recommendation
     rule_plan = generate_rule_based_plan(profile_in)
@@ -74,6 +83,15 @@ async def generate_plan(
         ai_model_used=model_used
     )
     db.add(plan_db)
+    db.flush()  # assign plan_db.id before archiving/materializing
+
+    # 5. Consumer-only plan lifecycle -- never runs for anonymous research plans.
+    if current_user:
+        archive_previous_active_plans(db, current_user.id)
+        plan_db.start_date = date.today()
+        plan_db.status = "active"
+        materialize_week_one(db, plan_db.id, rule_plan)
+
     db.commit()
     db.refresh(plan_db)
 
@@ -88,6 +106,39 @@ async def generate_plan(
         ai_model_used=model_used,
         created_at=plan_db.created_at
     )
+
+
+@router.get("/mine", response_model=List[Dict[str, Any]])
+def list_my_plans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Lists the current authenticated user's OWN plans (consumer plans only).
+    Kept as a separate endpoint from GET /api/plans (which deliberately
+    lists only anonymous research plans and is unauthenticated) rather than
+    changing that endpoint's existing behavior/contract.
+    Must be declared before GET /{plan_id} so "mine" is never captured as a plan_id.
+    """
+    plans = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.user_id == current_user.id)
+        .order_by(TrainingPlan.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "plan_id": p.id,
+            "calculated_vdot": p.calculated_vdot,
+            "target_pace": p.target_pace,
+            "status": p.status,
+            "start_date": p.start_date,
+            "created_at": p.created_at,
+            "race_distance": p.profile.target_race_distance if p.profile else "N/A",
+            "target_time": p.profile.target_race_time if p.profile else "N/A",
+        }
+        for p in plans
+    ]
 
 
 @router.get("/{plan_id}", response_model=PlanGenerationResponse)
@@ -126,6 +177,36 @@ def get_plan_by_id(
         ai_model_used=plan_db.ai_model_used,
         created_at=plan_db.created_at
     )
+
+
+@router.get("/{plan_id}/workouts", response_model=List[TrainingPlanWorkoutResponse])
+def get_plan_workouts(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """
+    Returns the plan's scheduled workouts (week 1 only -- see
+    PHASE_2_DESIGN.md Section 3.2). Ownership rule mirrors GET /{plan_id}
+    exactly: an anonymous plan (which will always have zero rows here) is
+    open to anyone; a user-owned plan is only visible to its owner, with
+    the same generic 404 for anyone else.
+    """
+    plan_db = db.query(TrainingPlan).filter(TrainingPlan.id == plan_id).first()
+    if not plan_db:
+        raise HTTPException(status_code=404, detail="Training plan not found")
+
+    if plan_db.user_id is not None:
+        if current_user is None or current_user.id != plan_db.user_id:
+            raise HTTPException(status_code=404, detail="Training plan not found")
+
+    workouts = (
+        db.query(TrainingPlanWorkout)
+        .filter(TrainingPlanWorkout.training_plan_id == plan_id)
+        .order_by(TrainingPlanWorkout.week_number, TrainingPlanWorkout.id)
+        .all()
+    )
+    return [TrainingPlanWorkoutResponse.from_model(w) for w in workouts]
 
 
 @router.get("", response_model=List[Dict[str, Any]])

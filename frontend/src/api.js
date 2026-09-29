@@ -102,3 +102,47 @@ export async function fetchMyProfile() {
 export async function updateMyProfile(updates) {
   return apiFetch('/users/me/profile', { method: 'PATCH', body: JSON.stringify(updates) });
 }
+
+// --- Consumer plans ---
+
+export async function fetchMyPlans() {
+  return apiFetch('/plans/mine');
+}
+
+export async function fetchPlanWorkouts(planId) {
+  return apiFetch(`/plans/${planId}/workouts`);
+}
+
+// --- Dashboard ---
+
+export async function fetchDashboardSummary() {
+  return apiFetch('/dashboard/summary');
+}
+
+// --- Workouts ---
+
+export async function createWorkout(payload) {
+  return apiFetch('/workouts', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function fetchWorkouts({ dateFrom, dateTo, workoutType, page = 1, pageSize = 20 } = {}) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  if (workoutType) params.set('workout_type', workoutType);
+  params.set('page', String(page));
+  params.set('page_size', String(pageSize));
+  return apiFetch(`/workouts?${params.toString()}`);
+}
+
+export async function fetchWorkoutById(workoutId) {
+  return apiFetch(`/workouts/${workoutId}`);
+}
+
+export async function updateWorkout(workoutId, updates) {
+  return apiFetch(`/workouts/${workoutId}`, { method: 'PATCH', body: JSON.stringify(updates) });
+}
+
+export async function deleteWorkout(workoutId) {
+  return apiFetch(`/workouts/${workoutId}`, { method: 'DELETE' });
+}
