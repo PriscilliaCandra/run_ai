@@ -15,6 +15,7 @@ from app.workouts.schemas import (
     TrainingPlanWorkoutResponse,
     WorkoutLogResponse,
 )
+from app.workouts.service import build_enriched_tpw_response
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -110,19 +111,46 @@ def get_dashboard_summary(
         week1_detail_available = current_week == 1
 
         today_scheduled = None
+        upcoming_scheduled = None
+        week1_completed_count = None
+        week1_total_loggable_count = None
+
         if week1_detail_available:
-            today_name = today.strftime("%A")
-            tpw = (
+            # Fetch and enrich all 7 week-1 rows once (Phase 3), rather than a
+            # single today-only query -- needed for "upcoming" and the
+            # completion count below, and cheaper than 7 separate round trips.
+            all_week1 = (
                 db.query(TrainingPlanWorkout)
                 .filter(
                     TrainingPlanWorkout.training_plan_id == active_plan_row.id,
                     TrainingPlanWorkout.week_number == 1,
-                    TrainingPlanWorkout.day_of_week == today_name,
                 )
-                .first()
+                .all()
             )
-            if tpw is not None:
-                today_scheduled = TrainingPlanWorkoutResponse.from_model(tpw)
+            enriched = [
+                build_enriched_tpw_response(db, tpw, active_plan_row.start_date, today, current_user.id)
+                for tpw in all_week1
+            ]
+
+            today_name = today.strftime("%A")
+            today_scheduled = next((e for e in enriched if e.day_of_week == today_name), None)
+
+            # Next non-rest-day scheduled workout strictly after today, still
+            # within week 1 -- purely descriptive, reuses data already fetched
+            # above, no new endpoint or query pattern.
+            future_non_rest = sorted(
+                (e for e in enriched if e.scheduled_date > today and e.completion_status is not None),
+                key=lambda e: e.scheduled_date,
+            )
+            upcoming_scheduled = future_non_rest[0] if future_non_rest else None
+
+            # Week-1 completion count: a plain count of non-rest-day scheduled
+            # workouts with a linked non-deleted log vs. the total non-rest-day
+            # count -- never called an "adherence score" anywhere (see
+            # PHASE_3_DESIGN.md Section 8.5).
+            loggable = [e for e in enriched if e.completion_status is not None]
+            week1_total_loggable_count = len(loggable)
+            week1_completed_count = sum(1 for e in loggable if e.completion_status == "completed")
 
         active_plan = ActivePlanSummary(
             plan_id=active_plan_row.id,
@@ -134,6 +162,9 @@ def get_dashboard_summary(
             total_weeks=total_weeks,
             today_scheduled_workout=today_scheduled,
             week1_detail_available=week1_detail_available,
+            upcoming_scheduled_workout=upcoming_scheduled,
+            week1_completed_count=week1_completed_count,
+            week1_total_loggable_count=week1_total_loggable_count,
         )
 
     return DashboardSummaryResponse(

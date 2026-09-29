@@ -110,6 +110,11 @@ export default function HistoryPage() {
                       {new Date(w.workout_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </span>
                     <Badge variant="indigo">{workoutTypeLabel(w.workout_type)}</Badge>
+                    {w.linked_scheduled_workout && (
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        Planned: {workoutTypeLabel(w.linked_scheduled_workout.workout_type) || w.linked_scheduled_workout.workout_type}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
                     {w.distance_km.toFixed(2)} km &middot; {w.pace_display}

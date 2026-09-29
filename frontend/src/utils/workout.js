@@ -55,6 +55,16 @@ export function computeLivePace(distanceKmStr, durationInput) {
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')} /km`;
 }
 
+// Consumer-facing labels for the derived completion state (never stored --
+// see app/workouts/service.py::derive_completion_status). Deliberately never
+// says "Missed" or "Failed" anywhere in the UI.
+export function completionLabel(status) {
+  if (status === 'completed') return 'Completed';
+  if (status === 'missed') return 'Not logged';
+  if (status === 'scheduled') return 'Not logged yet';
+  return null;
+}
+
 export function todayIsoDate() {
   const d = new Date();
   const yyyy = d.getFullYear();

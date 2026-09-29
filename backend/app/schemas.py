@@ -93,6 +93,12 @@ class PlanGenerationResponse(BaseModel):
     explainability: Dict[str, Any]
     ai_model_used: str
     created_at: datetime
+    # Phase 3 additive field: None for every anonymous research plan (which
+    # never sets a status at all -- see TrainingPlan.status); 'active' or
+    # 'archived' for a consumer plan. Lets the consumer frontend avoid
+    # offering a "log this workout" action that the backend would reject
+    # for an archived plan's schedule (Section 7's locked decision).
+    status: Optional[str] = None
 
 class PlanEvaluationCreate(BaseModel):
     training_plan_id: str

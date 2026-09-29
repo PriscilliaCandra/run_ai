@@ -13,7 +13,7 @@ from app.schemas import RunnerProfileCreate, PlanGenerationResponse
 from app.rules.generator import generate_rule_based_plan
 from app.ai.llm_service import get_personalized_ai_plan
 from app.workouts.schemas import TrainingPlanWorkoutResponse
-from app.workouts.service import archive_previous_active_plans, materialize_week_one
+from app.workouts.service import archive_previous_active_plans, materialize_week_one, build_enriched_tpw_response
 
 router = APIRouter(prefix="/plans", tags=["Training Plans"])
 
@@ -104,7 +104,8 @@ async def generate_plan(
         ai_personalized_plan=ai_plan,
         explainability=rule_plan["explainability"],
         ai_model_used=model_used,
-        created_at=plan_db.created_at
+        created_at=plan_db.created_at,
+        status=plan_db.status,
     )
 
 
@@ -175,7 +176,8 @@ def get_plan_by_id(
         ai_personalized_plan=json.loads(plan_db.ai_plan_json),
         explainability=json.loads(plan_db.explainability_summary),
         ai_model_used=plan_db.ai_model_used,
-        created_at=plan_db.created_at
+        created_at=plan_db.created_at,
+        status=plan_db.status,
     )
 
 
@@ -206,6 +208,17 @@ def get_plan_workouts(
         .order_by(TrainingPlanWorkout.week_number, TrainingPlanWorkout.id)
         .all()
     )
+
+    # Phase 3: enrich with scheduled_date/completion_status/linked_workout_logs
+    # whenever the plan actually has a start_date (i.e. a consumer plan --
+    # an anonymous research plan never sets one and always has zero rows
+    # here anyway, so this branch is moot for it but handled safely).
+    if plan_db.start_date is not None:
+        today = date.today()
+        return [
+            build_enriched_tpw_response(db, w, plan_db.start_date, today, plan_db.user_id)
+            for w in workouts
+        ]
     return [TrainingPlanWorkoutResponse.from_model(w) for w in workouts]
 
 

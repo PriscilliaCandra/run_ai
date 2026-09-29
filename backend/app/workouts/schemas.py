@@ -85,6 +85,46 @@ class WorkoutLogUpdate(BaseModel):
         return v
 
 
+class ScheduledWorkoutSummary(BaseModel):
+    """
+    Lightweight, non-recursive view of a scheduled workout, embedded only as
+    WorkoutLogResponse.linked_scheduled_workout. Deliberately excludes any
+    list of linked workout logs (unlike TrainingPlanWorkoutResponse below) to
+    avoid a circular schema -- see PHASE_3_DESIGN.md Section 13.1.
+
+    completion_status here is always "completed" (or None for a rest day)
+    because this type is only ever attached to the one WorkoutLogResponse
+    that IS the fulfilling log -- there is nothing to derive.
+    """
+    id: str
+    week_number: int
+    day_of_week: str
+    workout_type: str
+    distance_meters: int
+    distance_km: float
+    pace_target: str
+    intensity_zone: str
+    purpose: str
+    scheduled_date: date
+    completion_status: Optional[str]
+
+    @classmethod
+    def from_tpw(cls, tpw, scheduled_date: date, completion_status: Optional[str]) -> "ScheduledWorkoutSummary":
+        return cls(
+            id=tpw.id,
+            week_number=tpw.week_number,
+            day_of_week=tpw.day_of_week,
+            workout_type=tpw.workout_type,
+            distance_meters=tpw.distance_meters,
+            distance_km=round(tpw.distance_meters / 1000.0, 2),
+            pace_target=tpw.pace_target,
+            intensity_zone=tpw.intensity_zone,
+            purpose=tpw.purpose,
+            scheduled_date=scheduled_date,
+            completion_status=completion_status,
+        )
+
+
 class WorkoutLogResponse(BaseModel):
     id: str
     workout_date: date
@@ -101,11 +141,12 @@ class WorkoutLogResponse(BaseModel):
     rpe: Optional[int]
     notes: Optional[str]
     training_plan_workout_id: Optional[str]
+    linked_scheduled_workout: Optional[ScheduledWorkoutSummary] = None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, wl) -> "WorkoutLogResponse":
+    def from_model(cls, wl, linked_scheduled_workout: Optional[ScheduledWorkoutSummary] = None) -> "WorkoutLogResponse":
         pace_sec, pace_disp = _pace_display(wl.distance_meters, wl.duration_seconds)
         return cls(
             id=wl.id,
@@ -123,6 +164,7 @@ class WorkoutLogResponse(BaseModel):
             rpe=wl.rpe,
             notes=wl.notes,
             training_plan_workout_id=wl.training_plan_workout_id,
+            linked_scheduled_workout=linked_scheduled_workout,
             created_at=wl.created_at,
             updated_at=wl.updated_at,
         )
@@ -145,9 +187,23 @@ class TrainingPlanWorkoutResponse(BaseModel):
     pace_target: str
     intensity_zone: str
     purpose: str
+    # Phase 3 additive fields -- all optional/defaulted so any existing caller
+    # that only reads the Phase 2 fields above keeps working unmodified.
+    # None (never fabricated) whenever the plan has no start_date (i.e. an
+    # anonymous research plan, which never reaches this branch in practice
+    # since it always has zero training_plan_workouts rows).
+    scheduled_date: Optional[date] = None
+    completion_status: Optional[str] = None  # "scheduled" | "completed" | "missed" | None for rest days
+    linked_workout_logs: List["WorkoutLogResponse"] = Field(default_factory=list)
 
     @classmethod
-    def from_model(cls, tpw) -> "TrainingPlanWorkoutResponse":
+    def from_model(
+        cls,
+        tpw,
+        scheduled_date: Optional[date] = None,
+        completion_status: Optional[str] = None,
+        linked_workout_logs: Optional[List["WorkoutLogResponse"]] = None,
+    ) -> "TrainingPlanWorkoutResponse":
         return cls(
             id=tpw.id,
             week_number=tpw.week_number,
@@ -158,6 +214,9 @@ class TrainingPlanWorkoutResponse(BaseModel):
             pace_target=tpw.pace_target,
             intensity_zone=tpw.intensity_zone,
             purpose=tpw.purpose,
+            scheduled_date=scheduled_date,
+            completion_status=completion_status,
+            linked_workout_logs=linked_workout_logs or [],
         )
 
 
@@ -177,6 +236,11 @@ class ActivePlanSummary(BaseModel):
     total_weeks: int
     today_scheduled_workout: Optional[TrainingPlanWorkoutResponse]
     week1_detail_available: bool  # false => detailed daily workouts aren't materialized past week 1 (see PHASE_2_DESIGN.md Section 9.3)
+    # Phase 3 additive fields, all None/absent whenever week1_detail_available
+    # is False -- never fabricated for a week with no materialized schedule.
+    upcoming_scheduled_workout: Optional[TrainingPlanWorkoutResponse] = None
+    week1_completed_count: Optional[int] = None       # of the non-rest-day week-1 workouts
+    week1_total_loggable_count: Optional[int] = None  # total non-rest-day week-1 workouts
 
 
 class DashboardSummaryResponse(BaseModel):

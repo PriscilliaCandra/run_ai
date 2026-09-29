@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
-import { Save, Loader2, AlertCircle } from 'lucide-react';
+import { Save, Loader2, AlertCircle, Unlink, CalendarCheck } from 'lucide-react';
 import Button from './ui/Button';
-import { WORKOUT_TYPES, parseDurationToSeconds, formatSecondsToDuration, computeLivePace, todayIsoDate } from '../utils/workout';
+import { WORKOUT_TYPES, workoutTypeLabel, parseDurationToSeconds, formatSecondsToDuration, computeLivePace, todayIsoDate } from '../utils/workout';
 
 const inputClass = "w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white min-h-[44px]";
 const labelClass = "block text-xs font-semibold text-slate-700 mb-1";
 const hintClass = "text-[11px] text-slate-400 mt-1 block";
 
-export default function WorkoutForm({ initial, onSubmit, submitLabel = 'Save Workout', submitting = false, submitError = null }) {
+// scheduledWorkout: passed when arriving via a "Log this workout" CTA (a
+// TrainingPlanWorkoutResponse-shaped object) to pre-fill fields and carry the
+// link through to submit. initial (edit mode) may already carry its own
+// initial.linked_scheduled_workout -- both are handled by the same `linkedTo`
+// state so the same UI (info box + Unlink button) serves both flows.
+export default function WorkoutForm({ initial, scheduledWorkout, onSubmit, submitLabel = 'Save Workout', submitting = false, submitError = null }) {
+  const startingLink = scheduledWorkout || initial?.linked_scheduled_workout || null;
+  const [linkedTo, setLinkedTo] = useState(startingLink);
   const [form, setForm] = useState({
     workout_date: initial?.workout_date || todayIsoDate(),
-    distance_km: initial ? String(initial.distance_km) : '',
+    distance_km: initial ? String(initial.distance_km) : (scheduledWorkout ? String(scheduledWorkout.distance_km) : ''),
     duration_input: initial ? formatSecondsToDuration(initial.duration_seconds) : '',
     workout_type: initial?.workout_type || 'EASY',
     avg_heart_rate: initial?.avg_heart_rate ?? '',
@@ -53,6 +60,7 @@ export default function WorkoutForm({ initial, onSubmit, submitLabel = 'Save Wor
       elevation_gain_m: form.elevation_gain_m === '' ? null : parseInt(form.elevation_gain_m),
       rpe: form.rpe === null || form.rpe === '' ? null : parseInt(form.rpe),
       notes: form.notes.trim() ? form.notes.trim() : null,
+      training_plan_workout_id: linkedTo?.id ?? null,
     });
   };
 
@@ -64,6 +72,28 @@ export default function WorkoutForm({ initial, onSubmit, submitLabel = 'Save Wor
         <div className="p-3 bg-rose-50 border-l-4 border-rose-500 text-rose-800 rounded-r-lg text-xs flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
           <span>{displayError}</span>
+        </div>
+      )}
+
+      {linkedTo && (
+        <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <CalendarCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <span className="text-xs font-bold text-indigo-900 block">
+                Planned: {workoutTypeLabel(linkedTo.workout_type) || linkedTo.workout_type}
+                {linkedTo.distance_km > 0 ? ` — ${linkedTo.distance_km.toFixed(1)} km` : ''}
+              </span>
+              <span className="text-[11px] text-indigo-600">{linkedTo.day_of_week}{linkedTo.scheduled_date ? ` · ${linkedTo.scheduled_date}` : ''}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLinkedTo(null)}
+            className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 px-2 py-1.5 rounded-lg hover:bg-indigo-100 cursor-pointer"
+          >
+            <Unlink className="w-3.5 h-3.5" /> Unlink from plan
+          </button>
         </div>
       )}
 

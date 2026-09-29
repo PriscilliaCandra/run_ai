@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Pencil, Trash2, Clock, Gauge, HeartPulse, Footprints, Mountain, X } from 'lucide-react';
+import { ArrowLeft, Pencil, Trash2, Clock, Gauge, HeartPulse, Footprints, Mountain, X, CalendarCheck, Unlink } from 'lucide-react';
 import { fetchWorkoutById, updateWorkout, deleteWorkout } from '../api';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -19,6 +19,7 @@ export default function WorkoutDetailPage() {
   const [saveError, setSaveError] = useState(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -46,6 +47,18 @@ export default function WorkoutDetailPage() {
       setSaveError(err.message || 'Failed to save changes.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUnlink = async () => {
+    setUnlinking(true);
+    try {
+      const updated = await updateWorkout(id, { training_plan_workout_id: null });
+      setWorkout(updated);
+    } catch (err) {
+      setError(err.message || 'Failed to unlink this workout.');
+    } finally {
+      setUnlinking(false);
     }
   };
 
@@ -116,6 +129,28 @@ export default function WorkoutDetailPage() {
                   </Button>
                   <Button variant="secondary" size="sm" onClick={() => setConfirmingDelete(false)}>Cancel</Button>
                 </div>
+              </div>
+            )}
+
+            {workout.linked_scheduled_workout && (
+              <div className="mt-4 p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <CalendarCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-indigo-900 block">
+                      Planned: {workoutTypeLabel(workout.linked_scheduled_workout.workout_type) || workout.linked_scheduled_workout.workout_type}
+                      {workout.linked_scheduled_workout.distance_km > 0 ? ` — ${workout.linked_scheduled_workout.distance_km.toFixed(1)} km` : ''}
+                    </span>
+                    <span className="text-[11px] text-indigo-600">{workout.linked_scheduled_workout.pace_target}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleUnlink}
+                  disabled={unlinking}
+                  className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 px-2 py-1.5 rounded-lg hover:bg-indigo-100 cursor-pointer disabled:opacity-50"
+                >
+                  <Unlink className="w-3.5 h-3.5" /> {unlinking ? 'Unlinking...' : 'Unlink from plan'}
+                </button>
               </div>
             )}
 

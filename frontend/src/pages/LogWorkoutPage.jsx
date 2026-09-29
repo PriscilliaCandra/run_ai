@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle } from 'lucide-react';
 import WorkoutForm from '../components/WorkoutForm';
 import { createWorkout } from '../api';
 
 export default function LogWorkoutPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Arriving from a "Log this workout" CTA (Dashboard/Plan Detail) carries the
+  // full scheduled-workout object via router state -- no extra fetch/endpoint
+  // needed, since the caller already has it loaded.
+  const scheduledWorkout = location.state?.scheduledWorkout || null;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -36,7 +41,13 @@ export default function LogWorkoutPage() {
         </div>
 
         <div className="mt-6">
-          <WorkoutForm onSubmit={handleSubmit} submitting={submitting} submitError={error} submitLabel="Log Workout" />
+          <WorkoutForm
+            scheduledWorkout={scheduledWorkout}
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            submitError={error}
+            submitLabel="Log Workout"
+          />
         </div>
       </div>
     </div>
